@@ -4,7 +4,7 @@ A full-stack, commercial-ready booking website for **RGN's Homestay Homestyle Li
 
 - **Backend**: Node.js + Express (`backend/`)
 - **Frontend**: React 19 + TanStack Start/Router + Tailwind CSS v4 (`rgn-homestyle-retreat-main/`)
-- **Integrations**: Google Calendar API, Google Sheets API, Gmail API, Gemini API
+- **Integrations**: Google Calendar API, Google Sheets API, Gmail SMTP (App Password), Gemini API
 
 ---
 
@@ -41,7 +41,7 @@ This is a small commercial site handling real guest PII (name, phone, email) and
 - **Duplicate-booking protection** — a guest (matched by normalized email *or* phone) cannot submit a second booking whose dates overlap one they already hold; the check reads live (uncached) sheet data at submission time to minimize race conditions.
 - **Honeypot anti-bot field** on the reservation form — invisible to real guests (`aria-hidden`, `tabIndex={-1}`, visually hidden), rejected server-side if filled.
 - **JSON-only error handling** — a centralized error handler and a JSON 404 for unmatched `/api/*` routes mean the API never leaks a stack trace or Express's default HTML error page.
-- **Secrets hygiene** — all credentials (Google service account key, OAuth secrets, Gemini API key) live only in `backend/.env`, which is git-ignored (see `.gitignore`); `backend/.env.example` ships placeholders only. No secret is hardcoded in source. The repository's git history was audited and contains no committed credentials.
+- **Secrets hygiene** — all credentials (Google service account key, Gmail App Password, Gemini API key) live only in `backend/.env`, which is git-ignored (see `.gitignore`); `backend/.env.example` ships placeholders only. No secret is hardcoded in source. The repository's git history was audited and contains no committed credentials.
 - **Dependencies** — `npm audit` is clean (0 known vulnerabilities) on both `backend/` and `rgn-homestyle-retreat-main/` as of the last update to this file.
 
 **Deploying to production?**
@@ -70,9 +70,12 @@ flowchart TD
     B -->|Submit Booking Form| C
     C -->|Duplicate-contact check| E[Google Sheets API]
     C -->|Re-validate dates| D
-    C -->|Append booking row| E
-    C -->|Create blocked event| D
-    C -->|Send owner email| F[Gmail API]
+
+    C -->|"Append booking row (parallel)"| E
+    C -->|"Create blocked event (parallel)"| D
+    C -->|"Send owner email (parallel)"| F[Gmail SMTP]
+
+    D --> J[Owner's Google Calendar]
     F --> G[Host Email Inbox]
     C -->|Return Booking ID + owner contact| B
     B --> H[Confirmation Screen]
@@ -82,6 +85,8 @@ flowchart TD
     C -->|Prompt + filtered context| I[Gemini API]
     I -->|Reply| C --> B
 ```
+
+Sheets uses `GOOGLE_SERVICE_ACCOUNT_EMAIL`/`GOOGLE_PRIVATE_KEY`. Calendar uses that same account **unless** a dedicated `GOOGLE_CALENDAR_SERVICE_ACCOUNT_EMAIL`/`GOOGLE_CALENDAR_PRIVATE_KEY` pair is set (`backend/src/services/googleAuth.js`), which lets Calendar write straight to the owner's own Google Calendar independently of whichever account the Sheet is shared with. The Sheet row, Calendar event, and owner email are dispatched **concurrently** (`Promise.all` in `backend/src/routes/booking.js`) rather than sequentially — each service catches its own errors internally, so a failure in one never blocks the others.
 
 ---
 
@@ -150,17 +155,30 @@ npm run dev              # http://localhost:5173 (or next free port)
 
 ### 4. Environment variables (`backend/.env`)
 ```env
-# Google OAuth2 (Calendar & Gmail) — or use a service account instead (see below)
+# Google OAuth2 — optional/unused by default, see note below
 GOOGLE_CLIENT_ID=your-client-id
 GOOGLE_CLIENT_SECRET=your-client-secret
 GOOGLE_REDIRECT_URI=http://localhost:5000/oauth2callback
 GOOGLE_REFRESH_TOKEN=your-refresh-token
 
-# Google service account (Sheets + Calendar) — share the calendar/sheet with this email
+# Google service account (Sheets, and Calendar if no dedicated one below) —
+# share the calendar/sheet with this email
 GOOGLE_SERVICE_ACCOUNT_EMAIL=your-service-account@your-project.iam.gserviceaccount.com
 GOOGLE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
 
-OWNER_EMAIL=rgnshomestay@gmail.com
+# Optional: a SEPARATE service account used only for Calendar, so it can be
+# pointed at the owner's own calendar independently of the account above.
+# Share the target Calendar with this account's email, "Make changes to
+# events" access. Leave unset to keep using the account above for Calendar.
+GOOGLE_CALENDAR_SERVICE_ACCOUNT_EMAIL=
+GOOGLE_CALENDAR_PRIVATE_KEY=
+
+# Gmail App Password (free, no Cloud Console setup) — generate at
+# myaccount.google.com/apppasswords with 2-Step Verification enabled
+GMAIL_SENDER_EMAIL=owner@gmail.com
+GMAIL_APP_PASSWORD=your-16-character-app-password
+
+OWNER_EMAIL=owner@gmail.com
 OWNER_PHONE=+917010775902
 OWNER_CALENDAR_ID=primary
 
