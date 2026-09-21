@@ -28,6 +28,7 @@ import {
 import { z } from "zod";
 
 import heroImage from "@/assets/bg-moss.jpg";
+import logoMark from "@/assets/logo-mark.jpg";
 import homeImage from "@/assets/rgn-2bhk.jpg";
 import suiteImage from "@/assets/rgn-1bhk.jpg";
 import thinnaiImage from "@/assets/rgn-thinnai.jpg";
@@ -152,9 +153,9 @@ function Brand({ inverted = false }: { inverted?: boolean }) {
   return (
     <a href="#home" className="group flex items-center gap-3" aria-label="RGN's Homestay home">
       <span
-        className={`grid size-11 place-items-center rounded-full border font-display text-sm font-bold ${inverted ? "border-hero-foreground/50 bg-hero-foreground/10 text-hero-foreground" : "border-gold bg-primary text-primary-foreground"}`}
+        className={`grid size-11 shrink-0 place-items-center overflow-hidden rounded-full border-2 shadow-sm ${inverted ? "border-hero-foreground/50" : "border-gold"}`}
       >
-        RGN
+        <img src={logoMark} alt="" className="size-full object-cover" width={88} height={88} />
       </span>
       <span
         className={`hidden font-display text-lg font-semibold sm:block ${inverted ? "text-hero-foreground" : "text-foreground"}`}

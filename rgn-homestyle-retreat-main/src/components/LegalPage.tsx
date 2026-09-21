@@ -2,6 +2,8 @@ import { Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
 
+import logoMark from "@/assets/logo-mark.jpg";
+
 export function LegalPage({
   title,
   updated,
@@ -16,8 +18,14 @@ export function LegalPage({
       <header className="border-b border-border bg-secondary px-5 py-6 lg:px-8">
         <div className="mx-auto flex max-w-3xl items-center justify-between">
           <Link to="/" className="group flex items-center gap-3" aria-label="RGN's Homestay home">
-            <span className="grid size-10 place-items-center rounded-full border border-gold bg-primary font-display text-sm font-bold text-primary-foreground">
-              RGN
+            <span className="grid size-10 shrink-0 place-items-center overflow-hidden rounded-full border-2 border-gold shadow-sm">
+              <img
+                src={logoMark}
+                alt=""
+                className="size-full object-cover"
+                width={80}
+                height={80}
+              />
             </span>
             <span className="font-display text-lg font-semibold">RGN's Homestay</span>
           </Link>
