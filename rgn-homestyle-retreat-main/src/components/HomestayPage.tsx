@@ -189,10 +189,12 @@ function SectionHeading({
 
 // Persistent bottom CTA rail for mobile, so "Reserve Stay" is always one tap
 // away while browsing rooms/amenities/gallery. Hides once the real booking
-// form scrolls into view, and stays clear of the chat bubble's corner.
+// form scrolls into view, and stays hidden past it (rather than reappearing
+// over the footer) since the form itself is already the CTA at that point.
 function MobileBookingBar() {
   const [pastHero, setPastHero] = useState(false);
   const [bookingInView, setBookingInView] = useState(false);
+  const [pastBooking, setPastBooking] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setPastHero(window.scrollY > 640);
@@ -205,14 +207,21 @@ function MobileBookingBar() {
     const bookingEl = document.getElementById("booking");
     if (!bookingEl) return;
     const observer = new IntersectionObserver(
-      (entries) => setBookingInView(entries.some((entry) => entry.isIntersecting)),
+      (entries) => {
+        const entry = entries[0];
+        setBookingInView(entry.isIntersecting);
+        // Once scrolled fully past (section's bottom above the viewport),
+        // keep the bar hidden for the rest of the page (gallery footer,
+        // policies, etc.) instead of it popping back up over that content.
+        if (!entry.isIntersecting) setPastBooking(entry.boundingClientRect.top < 0);
+      },
       { threshold: 0.2 },
     );
     observer.observe(bookingEl);
     return () => observer.disconnect();
   }, []);
 
-  if (!pastHero || bookingInView) return null;
+  if (!pastHero || bookingInView || pastBooking) return null;
 
   return (
     <div className="fixed bottom-4 left-4 right-24 z-40 lg:hidden">
@@ -314,14 +323,14 @@ function QuickSearch({
   update: (values: Partial<BookingValues>) => void;
 }) {
   return (
-    <div className="hero-search shadow-float mx-auto grid w-[calc(100%-2rem)] max-w-6xl gap-3 rounded-3xl border border-border bg-card p-3 md:grid-cols-[1.25fr_1fr_1fr_auto] md:rounded-full md:p-2">
+    <div className="hero-search shadow-float mx-auto grid w-[calc(100%-2rem)] max-w-6xl gap-3 rounded-3xl border border-border bg-card p-3 lg:grid-cols-[1.25fr_1fr_1fr_auto] lg:rounded-full lg:p-2">
       <label className="flex min-w-0 flex-col px-4 py-2 text-xs font-bold text-primary">
         Accommodation
         <span className="relative mt-1">
           <select
             value={values.roomType}
             onChange={(event) => update({ roomType: event.target.value as RoomType })}
-            className="w-full appearance-none bg-transparent pr-7 text-sm font-semibold text-foreground outline-none"
+            className="w-full appearance-none bg-transparent pr-7 text-base font-semibold text-foreground outline-none md:text-sm"
           >
             <option value="2bhk">2BHK Full Home (₹8,000/nt)</option>
             <option value="1bhk">1BHK Suite (₹6,000/nt)</option>
@@ -329,7 +338,7 @@ function QuickSearch({
           <ChevronDown className="pointer-events-none absolute right-0 top-0 size-4 text-muted-foreground" />
         </span>
       </label>
-      <label className="border-border px-4 py-2 text-xs font-bold text-primary md:border-l">
+      <label className="border-border px-4 py-2 text-xs font-bold text-primary lg:border-l">
         Check-in (2:00 PM)
         <Input
           type="date"
@@ -339,7 +348,7 @@ function QuickSearch({
           className="mt-1 h-auto border-0 p-0 font-semibold shadow-none focus-visible:ring-0"
         />
       </label>
-      <label className="border-border px-4 py-2 text-xs font-bold text-primary md:border-l">
+      <label className="border-border px-4 py-2 text-xs font-bold text-primary lg:border-l">
         Check-out (2:00 PM)
         <Input
           type="date"
@@ -721,7 +730,7 @@ function BookingForm({
             id="guests"
             value={values.guests}
             onChange={(e) => update({ guests: e.target.value })}
-            className="h-11 w-full rounded-xl border border-input bg-background px-3 text-sm outline-none focus:ring-2 focus:ring-ring"
+            className="h-11 w-full rounded-xl border border-input bg-background px-3 text-base outline-none focus:ring-2 focus:ring-ring md:text-sm"
           >
             {guestOptions.map((count) => (
               <option key={count} value={count}>
