@@ -41,6 +41,11 @@ const roomOptions = {
   "1bhk": { name: "1BHK Suite", price: "₹6,000/night", shortPrice: "₹6,000/nt" },
 } as const;
 
+// Homestay location — https://maps.app.goo.gl/oQz3TU99UmVD7Mkv8
+const MAP_COORDS = "10.948146,78.090461";
+const MAP_EMBED_SRC = `https://www.google.com/maps?q=${MAP_COORDS}&hl=en&z=16&output=embed`;
+const MAP_DIRECTIONS_URL = `https://www.google.com/maps/search/?api=1&query=${MAP_COORDS}`;
+
 type RoomType = keyof typeof roomOptions;
 type BookingValues = {
   name: string;
@@ -177,6 +182,52 @@ function SectionHeading({
       </h2>
       {copy ? <p className="mt-4 leading-7 text-muted-foreground">{copy}</p> : null}
       <div className="kolam-rule mx-auto mt-6" aria-hidden="true" />
+    </div>
+  );
+}
+
+// Persistent bottom CTA rail for mobile, so "Reserve Stay" is always one tap
+// away while browsing rooms/amenities/gallery. Hides once the real booking
+// form scrolls into view, and stays clear of the chat bubble's corner.
+function MobileBookingBar() {
+  const [pastHero, setPastHero] = useState(false);
+  const [bookingInView, setBookingInView] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setPastHero(window.scrollY > 640);
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => {
+    const bookingEl = document.getElementById("booking");
+    if (!bookingEl) return;
+    const observer = new IntersectionObserver(
+      (entries) => setBookingInView(entries.some((entry) => entry.isIntersecting)),
+      { threshold: 0.2 },
+    );
+    observer.observe(bookingEl);
+    return () => observer.disconnect();
+  }, []);
+
+  if (!pastHero || bookingInView) return null;
+
+  return (
+    <div className="fixed bottom-4 left-4 right-24 z-40 lg:hidden">
+      <div className="flex items-center justify-between gap-3 rounded-full border border-border bg-card/95 py-2.5 pl-5 pr-2.5 shadow-float backdrop-blur-xl">
+        <div>
+          <p className="text-[0.65rem] font-bold uppercase tracking-wide text-muted-foreground">
+            From
+          </p>
+          <p className="font-display text-lg font-semibold leading-tight text-primary">
+            ₹6,000/night
+          </p>
+        </div>
+        <Button asChild className="h-11 shrink-0 rounded-full px-5">
+          <a href="#booking">Reserve Stay</a>
+        </Button>
+      </div>
     </div>
   );
 }
@@ -1015,6 +1066,22 @@ export function HomestayPage() {
                   <div className="mt-5 flex items-center gap-3 text-sm font-semibold text-primary">
                     <MapPin className="size-5" /> Thanthonimalai, Karur
                   </div>
+                  <div className="mt-5 overflow-hidden rounded-2xl border border-border">
+                    <iframe
+                      title="RGN's Homestay location on Google Maps"
+                      src={MAP_EMBED_SRC}
+                      width="100%"
+                      height="220"
+                      style={{ border: 0 }}
+                      loading="lazy"
+                      referrerPolicy="no-referrer-when-downgrade"
+                    />
+                  </div>
+                  <Button asChild variant="outline" className="mt-4 h-11 w-full rounded-full">
+                    <a href={MAP_DIRECTIONS_URL} target="_blank" rel="noreferrer">
+                      <MapPin /> Get Directions
+                    </a>
+                  </Button>
                 </article>
               </div>
               <BookingForm values={values} update={update} />
@@ -1076,6 +1143,7 @@ export function HomestayPage() {
           <p>Your Comfort, Our Tradition.</p>
         </div>
       </footer>
+      <MobileBookingBar />
       <ChatBot />
     </div>
   );
