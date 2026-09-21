@@ -1,6 +1,26 @@
 const { google } = require('googleapis');
 require('dotenv').config();
 
+function isServiceAccountConfigured() {
+  const { GOOGLE_SERVICE_ACCOUNT_EMAIL, GOOGLE_PRIVATE_KEY } = process.env;
+  return Boolean(GOOGLE_SERVICE_ACCOUNT_EMAIL && GOOGLE_PRIVATE_KEY);
+}
+
+function getServiceAccountAuth(scopes = [
+  'https://www.googleapis.com/auth/spreadsheets',
+  'https://www.googleapis.com/auth/calendar'
+]) {
+  if (!isServiceAccountConfigured()) {
+    return null;
+  }
+
+  return new google.auth.JWT({
+    email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+    key: process.env.GOOGLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
+    scopes
+  });
+}
+
 function isGoogleAuthConfigured() {
   const { GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN } = process.env;
   return Boolean(
@@ -33,5 +53,7 @@ function getOAuth2Client() {
 
 module.exports = {
   isGoogleAuthConfigured,
-  getOAuth2Client
+  getOAuth2Client,
+  isServiceAccountConfigured,
+  getServiceAccountAuth
 };

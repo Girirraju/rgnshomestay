@@ -1,20 +1,78 @@
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const availabilityRoutes = require('./routes/availability');
 const bookingRoutes = require('./routes/booking');
+const chatRoutes = require('./routes/chat');
 
 const app = express();
+const isProduction = process.env.NODE_ENV === 'production';
 
-// Middleware
-app.use(cors());
-app.use(express.json());
+// Security headers. This is a JSON-only API (no HTML views), so the default
+// script/style CSP directives don't apply — but we do need cross-origin
+// responses readable by the separately-hosted frontend, which CORS below
+// already gates by allowlist.
+app.use(helmet({
+  crossOriginResourcePolicy: { policy: 'cross-origin' }
+}));
+
+// CORS: only origins explicitly listed in CORS_ORIGINS may call this API.
+// In production, an unset CORS_ORIGINS means "block all cross-origin
+// requests" (safe default) rather than "allow every origin". In
+// non-production it falls back to allow-all for local-dev convenience.
+const allowedOrigins = (process.env.CORS_ORIGINS || '').split(',').map(o => o.trim()).filter(Boolean);
+if (isProduction && allowedOrigins.length === 0) {
+  console.warn('[Security] CORS_ORIGINS is not set. In production this blocks ALL cross-origin requests by default — set CORS_ORIGINS to your frontend URL(s).');
+}
+app.use(cors({
+  origin: allowedOrigins.length ? allowedOrigins : !isProduction,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type']
+}));
+
+// Cap request body size — booking/chat payloads are small; this blocks
+// oversized-payload abuse before it reaches route handlers.
+app.use(express.json({ limit: '15kb' }));
+
+// Baseline rate limit across the whole API, on top of the stricter
+// per-route limiters below, so no endpoint (including health/availability
+// checks) can be hammered without limit.
+const globalLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  limit: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests. Please try again later.' }
+});
+app.use('/api', globalLimiter);
+
+// Rate limit booking submissions to prevent spam/abuse of the Google API quota
+const bookingLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many booking attempts. Please try again later.' }
+});
+app.use('/api/book', bookingLimiter);
+
+// Rate limit chat messages to protect the Gemini API quota
+const chatLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 15,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many messages. Please wait a moment and try again.' }
+});
+app.use('/api/chat', chatLimiter);
 
 // API Routes
 app.use('/api', availabilityRoutes);
 app.use('/api', bookingRoutes);
+app.use('/api', chatRoutes);
 
 // Health Check
 app.get('/api/health', (req, res) => {
@@ -25,12 +83,28 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Serve frontend static files
-const rootDir = path.join(__dirname, '../../');
-app.use(express.static(rootDir));
-
+// This server is API-only. The frontend (rgn-homestyle-retreat-main) runs as its own app.
 app.get('/', (req, res) => {
-  res.sendFile(path.join(rootDir, 'code.html'));
+  res.status(200).json({
+    service: "RGN's Homestay Booking API",
+    message: 'This is the backend API. The website frontend runs separately.'
+  });
+});
+
+// Unmatched /api/* routes get a plain JSON 404 instead of Express's default HTML page.
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, message: 'Not found.' });
+});
+
+// Centralized error handler — never leak stack traces or internal error
+// details to the client, regardless of what threw or where.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  if (err && err.type === 'entity.too.large') {
+    return res.status(413).json({ success: false, message: 'Request payload too large.' });
+  }
+  console.error('[Server] Unhandled error:', err);
+  res.status(500).json({ success: false, message: 'Internal server error.' });
 });
 
 // Firebase Functions Export setup

@@ -1,5 +1,9 @@
 const { google } = require('googleapis');
-const { getOAuth2Client } = require('./googleAuth');
+const { getOAuth2Client, isServiceAccountConfigured, getServiceAccountAuth } = require('./googleAuth');
+
+function getCalendarAuth() {
+  return isServiceAccountConfigured() ? getServiceAccountAuth() : getOAuth2Client();
+}
 
 // In-memory mock storage for development/testing when live Google credentials are not set
 const mockBookings = [
@@ -20,7 +24,7 @@ function normalizeRoomType(roomType) {
  */
 async function getBookedDateRanges(roomType) {
   const normalized = normalizeRoomType(roomType);
-  const auth = getOAuth2Client();
+  const auth = getCalendarAuth();
   
   if (!auth) {
     console.log(`[CalendarService] Google Auth not configured. Returning mock bookings for ${normalized}.`);
@@ -98,7 +102,7 @@ async function checkAvailability(roomType, checkIn, checkOut) {
  */
 async function createBookingEvent({ roomType, name, phone, email, checkIn, checkOut, guests }) {
   const normalized = normalizeRoomType(roomType).toUpperCase();
-  const auth = getOAuth2Client();
+  const auth = getCalendarAuth();
 
   const eventPayload = {
     summary: `${normalized} Booking - ${name}`,
