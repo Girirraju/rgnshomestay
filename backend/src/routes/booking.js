@@ -139,22 +139,23 @@ router.post('/book', async (req, res) => {
       status: 'Confirmed'
     };
 
-    // Step 3: Append row to Google Sheets
-    await appendBookingRow(bookingData);
-
-    // Step 4: Create Google Calendar Event
-    await createBookingEvent(bookingData);
-
-    // Step 5: Send notification email via Gmail API
-    await sendOwnerNotification({
-      roomType,
-      checkIn,
-      checkOut,
-      name,
-      phone,
-      email,
-      guests: bookingData.guests
-    });
+    // Steps 3-5: Sheet row, Calendar event, and owner email all fire together
+    // rather than one after another — each service already catches its own
+    // errors and falls back internally, so none of them can block the others.
+    await Promise.all([
+      appendBookingRow(bookingData),
+      createBookingEvent(bookingData),
+      sendOwnerNotification({
+        bookingId,
+        roomType,
+        checkIn,
+        checkOut,
+        name,
+        phone,
+        email,
+        guests: bookingData.guests
+      })
+    ]);
 
     // Owner Contact Info from Environment Variables
     const ownerPhone = process.env.OWNER_PHONE || '+917010775902';

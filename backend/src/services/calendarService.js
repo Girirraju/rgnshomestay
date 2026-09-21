@@ -1,7 +1,17 @@
 const { google } = require('googleapis');
-const { getOAuth2Client, isServiceAccountConfigured, getServiceAccountAuth } = require('./googleAuth');
+const {
+  getOAuth2Client,
+  isServiceAccountConfigured,
+  getServiceAccountAuth,
+  isCalendarServiceAccountConfigured,
+  getCalendarServiceAccountAuth
+} = require('./googleAuth');
 
+// Prefers a calendar-only service account (GOOGLE_CALENDAR_SERVICE_ACCOUNT_EMAIL /
+// GOOGLE_CALENDAR_PRIVATE_KEY) when configured, so Calendar credentials can be
+// swapped independently of the Sheets-writing service account.
 function getCalendarAuth() {
+  if (isCalendarServiceAccountConfigured()) return getCalendarServiceAccountAuth();
   return isServiceAccountConfigured() ? getServiceAccountAuth() : getOAuth2Client();
 }
 
