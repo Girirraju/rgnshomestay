@@ -27,6 +27,9 @@ rgn-homestyle-retreat-main/.nitro
 rgn-homestyle-retreat-main/.tanstack/
 rgn-homestyle-retreat-main/.vinxi
 
+# Vercel local CLI cache (created by `vercel dev` / `vercel link`)
+.vercel
+
 # OS files
 .DS_Store
 Thumbs.db

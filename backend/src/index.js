@@ -37,6 +37,29 @@ app.use(cors({
 // oversized-payload abuse before it reaches route handlers.
 app.use(express.json({ limit: '15kb' }));
 
+// Rate limiters default to express-rate-limit's built-in in-memory store,
+// which only counts requests handled by that one warm process — fine for a
+// single long-running server, but on Vercel each serverless invocation can
+// land on a different (or freshly cold) instance, so counts wouldn't
+// actually be shared. If REDIS_URL is set (e.g. a free Upstash database),
+// limits are enforced against that shared store instead; without it, this
+// silently falls back to in-memory (correct for local dev / a normal server).
+let redisClient;
+if (process.env.REDIS_URL) {
+  const Redis = require('ioredis');
+  redisClient = new Redis(process.env.REDIS_URL);
+  redisClient.on('error', (err) => console.error('[RateLimit] Redis connection error:', err.message));
+}
+
+// One shared Redis connection, but each limiter needs its own RedisStore
+// instance (it namespaces keys internally) — RedisStore itself is cheap to
+// construct, so this doesn't open extra connections.
+function buildRateLimitStore() {
+  if (!redisClient) return undefined;
+  const { RedisStore } = require('rate-limit-redis');
+  return new RedisStore({ sendCommand: (...args) => redisClient.call(...args) });
+}
+
 // Baseline rate limit across the whole API, on top of the stricter
 // per-route limiters below, so no endpoint (including health/availability
 // checks) can be hammered without limit.
@@ -45,6 +68,7 @@ const globalLimiter = rateLimit({
   limit: 300,
   standardHeaders: true,
   legacyHeaders: false,
+  store: buildRateLimitStore(),
   message: { success: false, message: 'Too many requests. Please try again later.' }
 });
 app.use('/api', globalLimiter);
@@ -55,6 +79,7 @@ const bookingLimiter = rateLimit({
   limit: 10,
   standardHeaders: true,
   legacyHeaders: false,
+  store: buildRateLimitStore(),
   message: { success: false, message: 'Too many booking attempts. Please try again later.' }
 });
 app.use('/api/book', bookingLimiter);
@@ -65,6 +90,7 @@ const chatLimiter = rateLimit({
   limit: 15,
   standardHeaders: true,
   legacyHeaders: false,
+  store: buildRateLimitStore(),
   message: { success: false, message: 'Too many messages. Please wait a moment and try again.' }
 });
 app.use('/api/chat', chatLimiter);
@@ -107,16 +133,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, message: 'Internal server error.' });
 });
 
-// Firebase Functions Export setup
-try {
-  const functions = require('firebase-functions');
-  exports.api = functions.https.onRequest(app);
-} catch (e) {
-  // Firebase functions not loaded (running as standalone Express app)
-}
-
-// Local Express Server Execution
-if (require.main === module || !process.env.FUNCTION_TARGET) {
+// Only bind a listening port when this file is run directly (`node
+// src/index.js` / `npm start`). When it's `require()`'d instead — by a
+// serverless entry point such as api/index.js on Vercel — module.exports
+// below is all that's used, and the platform handles invoking the app per
+// request without a persistent listener.
+if (require.main === module) {
   const PORT = process.env.PORT || 5000;
   app.listen(PORT, () => {
     console.log(`=======================================================`);
