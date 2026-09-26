@@ -2,8 +2,22 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { checkAvailability, createBookingEvent } = require('../services/calendarService');
-const { appendBookingRow, findOverlappingBookingForContact } = require('../services/sheetsService');
+const {
+  appendBookingRow,
+  findOverlappingBookingForContact,
+  getTodaysBookingCounts
+} = require('../services/sheetsService');
 const { sendOwnerNotification } = require('../services/gmailService');
+
+// Daily abuse caps (reset at IST midnight). The site-wide cap is a
+// circuit breaker against scripted mass-booking: once hit, the site reports
+// rooms as fully booked for the rest of the day, whatever dates are asked for.
+function positiveIntEnv(name, fallback) {
+  const value = Number.parseInt(process.env[name], 10);
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+}
+const MAX_BOOKINGS_PER_DAY = positiveIntEnv('MAX_BOOKINGS_PER_DAY', 30);
+const MAX_BOOKINGS_PER_PHONE_PER_DAY = positiveIntEnv('MAX_BOOKINGS_PER_PHONE_PER_DAY', 3);
 
 const ROOM_TYPES = ['2bhk', '1bhk'];
 const NAME_RE = /^[\p{L}\p{N} .'-]{2,100}$/u;
@@ -104,7 +118,35 @@ router.post('/book', async (req, res) => {
       });
     }
 
-    // Step 1: Block the same guest (matched by email or phone) from holding
+    // Step 1: Daily limits. Fails closed — if the sheet can't be read we
+    // can't tell whether a limit has been hit, so no booking goes through.
+    let counts;
+    try {
+      counts = await getTodaysBookingCounts(phone);
+    } catch (error) {
+      console.error('[Booking] Could not verify daily booking limits:', error.message);
+      return res.status(503).json({
+        success: false,
+        message: 'We cannot take online bookings right now. Please call or WhatsApp the host to book.'
+      });
+    }
+
+    if (counts.total >= MAX_BOOKINGS_PER_DAY) {
+      console.warn(`[Booking] Daily site-wide limit (${MAX_BOOKINGS_PER_DAY}) reached — rejecting booking.`);
+      return res.status(409).json({
+        success: false,
+        message: 'Sorry, all rooms are fully booked. Please call or WhatsApp the host to check for openings.'
+      });
+    }
+
+    if (counts.forPhone >= MAX_BOOKINGS_PER_PHONE_PER_DAY) {
+      return res.status(429).json({
+        success: false,
+        message: `This phone number has reached the limit of ${MAX_BOOKINGS_PER_PHONE_PER_DAY} bookings per day. Please call or WhatsApp the host for more bookings.`
+      });
+    }
+
+    // Step 2: Block the same guest (matched by email or phone) from holding
     // two bookings that overlap the same dates — prevents accidental
     // duplicate submissions and deliberate double-booking abuse.
     const existingBooking = await findOverlappingBookingForContact({ email, phone, checkIn, checkOut });
@@ -115,7 +157,7 @@ router.post('/book', async (req, res) => {
       });
     }
 
-    // Step 2: Re-validate dates against Calendar API
+    // Step 3: Re-validate dates against Calendar API
     const isAvailable = await checkAvailability(roomType, checkIn, checkOut);
     if (!isAvailable) {
       return res.status(409).json({
@@ -139,7 +181,7 @@ router.post('/book', async (req, res) => {
       status: 'Confirmed'
     };
 
-    // Steps 3-5: Sheet row, Calendar event, and owner email all fire together
+    // Steps 4-6: Sheet row, Calendar event, and owner email all fire together
     // rather than one after another — each service already catches its own
     // errors and falls back internally, so none of them can block the others.
     await Promise.all([
@@ -161,7 +203,7 @@ router.post('/book', async (req, res) => {
     const ownerPhone = process.env.OWNER_PHONE || '+917010775902';
     const ownerEmail = process.env.OWNER_EMAIL || 'rgnshomestay@gmail.com';
 
-    // Step 6: Return Success Response
+    // Step 7: Return Success Response
     return res.status(201).json({
       success: true,
       bookingId,

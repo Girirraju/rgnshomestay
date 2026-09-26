@@ -29,24 +29,31 @@ function normalizeRoomType(roomType) {
   return str;
 }
 
+// The house has two bedroom units: a 2BHK booking takes both (whole home),
+// a 1BHK booking takes one. A night is full once both units are taken.
+const HOUSE_UNITS = 2;
+function unitsFor(roomType) {
+  return normalizeRoomType(roomType) === '1bhk' ? 1 : 2;
+}
+
 /**
- * Fetch booked date ranges for a given roomType.
+ * All active bookings as { start, end, units }. Calendar events are matched
+ * by "2bhk"/"1bhk"/"booking" in the title or description; an event that
+ * doesn't name a room type is treated as the whole home (safe default).
  */
-async function getBookedDateRanges(roomType) {
-  const normalized = normalizeRoomType(roomType);
+async function getBookings() {
   const auth = getCalendarAuth();
-  
+  const fromMock = () => mockBookings.map(b => ({ start: b.start, end: b.end, units: unitsFor(b.roomType) }));
+
   if (!auth) {
-    console.log(`[CalendarService] Google Auth not configured. Returning mock bookings for ${normalized}.`);
-    return mockBookings
-      .filter(b => b.roomType === normalized)
-      .map(({ start, end }) => ({ start, end }));
+    console.log('[CalendarService] Google Auth not configured. Using mock bookings.');
+    return fromMock();
   }
 
   try {
     const calendar = google.calendar({ version: 'v3', auth });
     const calendarId = process.env.OWNER_CALENDAR_ID || 'primary';
-    
+
     // Fetch events from today onwards
     const now = new Date();
     now.setHours(0, 0, 0, 0);
@@ -58,53 +65,74 @@ async function getBookedDateRanges(roomType) {
       orderBy: 'startTime'
     });
 
-    const events = response.data.items || [];
-    
-    const ranges = events
-      .filter(event => {
-        if (event.status === 'cancelled') return false;
-        const summary = (event.summary || '').toLowerCase();
-        const description = (event.description || '').toLowerCase();
-        // Match room type or include all events if no specific tag
-        return summary.includes(normalized) || description.includes(normalized) || summary.includes('booking');
-      })
+    return (response.data.items || [])
+      .filter(event => event.status !== 'cancelled')
       .map(event => {
+        const text = `${event.summary || ''} ${event.description || ''}`.toLowerCase();
+        let units = 0;
+        if (text.includes('2bhk')) units = 2;
+        else if (text.includes('1bhk')) units = 1;
+        else if (text.includes('booking')) units = 2;
         const start = event.start.date || (event.start.dateTime ? event.start.dateTime.split('T')[0] : null);
         const end = event.end.date || (event.end.dateTime ? event.end.dateTime.split('T')[0] : null);
-        return { start, end };
+        return { start, end, units };
       })
-      .filter(r => r.start && r.end);
-
-    return ranges;
+      .filter(r => r.units > 0 && r.start && r.end);
   } catch (error) {
     console.error('[CalendarService] Error listing calendar events:', error.message);
     // Fallback to mock data on API error to prevent server crash
-    return mockBookings
-      .filter(b => b.roomType === normalized)
-      .map(({ start, end }) => ({ start, end }));
+    return fromMock();
   }
 }
 
-/**
- * Check if dates overlap with existing calendar events
- */
-async function checkAvailability(roomType, checkIn, checkOut) {
-  const booked = await getBookedDateRanges(roomType);
-  
-  const reqStart = new Date(checkIn).getTime();
-  const reqEnd = new Date(checkOut).getTime();
+function addDays(dateStr, n) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+}
 
-  for (const range of booked) {
-    const bStart = new Date(range.start).getTime();
-    const bEnd = new Date(range.end).getTime();
-
-    // Overlap condition: reqStart < bEnd && reqEnd > bStart
-    if (reqStart < bEnd && reqEnd > bStart) {
-      return false; // Not available
+// Map of night (YYYY-MM-DD) -> units already taken that night.
+function unitsByNight(bookings) {
+  const nights = new Map();
+  for (const { start, end, units } of bookings) {
+    for (let day = start; day < end; day = addDays(day, 1)) {
+      nights.set(day, (nights.get(day) || 0) + units);
     }
   }
+  return nights;
+}
 
-  return true; // Available
+/**
+ * Date ranges on which `roomType` can NOT be booked, merged into
+ * consecutive { start, end } ranges (end exclusive, like calendar events).
+ */
+async function getBookedDateRanges(roomType) {
+  const needed = unitsFor(roomType);
+  const nights = unitsByNight(await getBookings());
+  const blocked = [...nights.entries()]
+    .filter(([, used]) => used + needed > HOUSE_UNITS)
+    .map(([day]) => day)
+    .sort();
+
+  const ranges = [];
+  for (const day of blocked) {
+    const last = ranges[ranges.length - 1];
+    if (last && last.end === day) last.end = addDays(day, 1);
+    else ranges.push({ start: day, end: addDays(day, 1) });
+  }
+  return ranges;
+}
+
+/**
+ * Check every night of the requested stay has enough free units
+ */
+async function checkAvailability(roomType, checkIn, checkOut) {
+  const needed = unitsFor(roomType);
+  const nights = unitsByNight(await getBookings());
+  for (let day = checkIn; day < checkOut; day = addDays(day, 1)) {
+    if ((nights.get(day) || 0) + needed > HOUSE_UNITS) return false;
+  }
+  return true;
 }
 
 /**

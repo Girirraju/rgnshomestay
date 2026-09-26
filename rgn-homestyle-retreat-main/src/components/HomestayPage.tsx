@@ -31,8 +31,20 @@ import heroImage from "@/assets/bg-moss.jpg";
 import logoMark from "@/assets/logo-mark.jpg";
 import homeImage from "@/assets/rgn-2bhk.jpg";
 import suiteImage from "@/assets/rgn-1bhk.jpg";
-import thinnaiImage from "@/assets/rgn-thinnai.jpg";
+import galleryEntranceImage from "@/assets/gallery-entrance.jpg";
+import galleryHallImage from "@/assets/gallery-hall.jpg";
+import galleryLivingImage from "@/assets/gallery-living.jpg";
+import galleryBedroomAcImage from "@/assets/gallery-bedroom-ac.jpg";
+import galleryBedroomImage from "@/assets/gallery-bedroom.jpg";
 import { Button } from "@/components/ui/button";
+import {
+  Carousel,
+  CarouselContent,
+  CarouselItem,
+  CarouselNext,
+  CarouselPrevious,
+  type CarouselApi,
+} from "@/components/ui/carousel";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ChatBot } from "@/components/ChatBot";
@@ -187,6 +199,88 @@ function SectionHeading({
   );
 }
 
+// Ordered as a walk-through of the house: entrance, then the hall, then rooms.
+const galleryPhotos = [
+  {
+    src: galleryEntranceImage,
+    title: "Welcome Entrance",
+    caption: "Tiled-roof frontage with gated parking",
+  },
+  { src: galleryHallImage, title: "Spacious Hall", caption: "Cane swing, TV & sofa seating" },
+  { src: galleryLivingImage, title: "Living Room", caption: "Bright, airy family lounge" },
+  {
+    src: galleryBedroomAcImage,
+    title: "Air-Conditioned Bedroom",
+    caption: "Two beds with AC & pedestal fan",
+  },
+  { src: galleryBedroomImage, title: "Family Bedroom", caption: "Double bed plus a single cot" },
+];
+
+function GalleryCarousel() {
+  const [api, setApi] = useState<CarouselApi>();
+  const [current, setCurrent] = useState(0);
+
+  useEffect(() => {
+    if (!api) return;
+    const onSelect = () => setCurrent(api.selectedScrollSnap());
+    onSelect();
+    api.on("select", onSelect);
+    return () => {
+      api.off("select", onSelect);
+    };
+  }, [api]);
+
+  return (
+    <div className="reveal mx-auto max-w-5xl">
+      <Carousel setApi={setApi} opts={{ loop: true }} aria-label="Homestay photo gallery">
+        <CarouselContent>
+          {galleryPhotos.map((photo, index) => (
+            <CarouselItem key={photo.title}>
+              <figure className="relative overflow-hidden rounded-3xl">
+                <img
+                  src={photo.src}
+                  alt={photo.title}
+                  loading={index === 0 ? "eager" : "lazy"}
+                  width={1600}
+                  height={1200}
+                  className="aspect-[4/3] w-full object-cover sm:aspect-[16/10]"
+                />
+                <figcaption className="absolute inset-x-0 bottom-0 bg-gallery-caption px-5 pb-4 pt-10 text-hero-foreground sm:p-8 sm:pb-10 sm:pt-16">
+                  <p className="font-display text-lg font-semibold sm:text-2xl">{photo.title}</p>
+                  <p className="mt-0.5 text-xs text-hero-muted sm:mt-1 sm:text-sm">
+                    {photo.caption}
+                  </p>
+                </figcaption>
+              </figure>
+            </CarouselItem>
+          ))}
+        </CarouselContent>
+        <CarouselPrevious className="left-3 h-10 w-10 border-0 bg-background/80 backdrop-blur hover:bg-background sm:left-5" />
+        <CarouselNext className="right-3 h-10 w-10 border-0 bg-background/80 backdrop-blur hover:bg-background sm:right-5" />
+      </Carousel>
+      <div className="mt-5 flex items-center justify-center gap-2">
+        {galleryPhotos.map((photo, index) => (
+          <button
+            key={photo.title}
+            type="button"
+            onClick={() => api?.scrollTo(index)}
+            aria-label={`Show photo ${index + 1}: ${photo.title}`}
+            aria-current={current === index}
+            className={`h-2 rounded-full transition-all ${
+              current === index
+                ? "w-8 bg-primary"
+                : "w-2 bg-muted-foreground/40 hover:bg-muted-foreground/70"
+            }`}
+          />
+        ))}
+      </div>
+      <p className="mt-3 text-center text-sm text-muted-foreground" aria-live="polite">
+        {current + 1} / {galleryPhotos.length} · Swipe or use the arrows
+      </p>
+    </div>
+  );
+}
+
 // Persistent bottom CTA rail for mobile, so "Reserve Stay" is always one tap
 // away while browsing rooms/amenities/gallery. Hides once the real booking
 // form scrolls into view, and stays hidden past it (rather than reappearing
@@ -209,6 +303,7 @@ function MobileBookingBar() {
     const observer = new IntersectionObserver(
       (entries) => {
         const entry = entries[0];
+        if (!entry) return;
         setBookingInView(entry.isIntersecting);
         // Once scrolled fully past (section's bottom above the viewport),
         // keep the bar hidden for the rest of the page (gallery footer,
@@ -960,52 +1055,7 @@ export function HomestayPage() {
         <section id="gallery" className="scroll-mt-20 px-5 py-24 lg:px-8">
           <div className="mx-auto max-w-7xl">
             <SectionHeading eyebrow="Visual Archive" title="Homestay Gallery" />
-            <div className="columns-1 gap-5 sm:columns-2 lg:columns-3">
-              {[
-                [
-                  heroImage,
-                  "Traditional Living Area",
-                  "Serene courtyard space",
-                  "aspect-[4/3]",
-                  1920,
-                  1280,
-                ],
-                [
-                  suiteImage,
-                  "Air-Conditioned Master Bedroom",
-                  "Loomed linens & garden view",
-                  "aspect-[4/5]",
-                  1408,
-                  992,
-                ],
-                [
-                  thinnaiImage,
-                  "Shaded Sit-Out Corridor",
-                  "Relaxed homestyle thinnai",
-                  "aspect-[3/4]",
-                  1200,
-                  1600,
-                ],
-              ].map(([src, title, caption, ratio, width, height]) => (
-                <figure
-                  key={title as string}
-                  className="reveal gallery-item group relative mb-5 break-inside-avoid overflow-hidden rounded-3xl"
-                >
-                  <img
-                    src={src as string}
-                    alt={title as string}
-                    loading="lazy"
-                    width={width as number}
-                    height={height as number}
-                    className={`${ratio as string} w-full object-cover transition-transform duration-700 group-hover:scale-105`}
-                  />
-                  <figcaption className="absolute inset-x-0 bottom-0 bg-gallery-caption p-6 text-hero-foreground">
-                    <p className="font-display text-xl font-semibold">{title as string}</p>
-                    <p className="mt-1 text-sm text-hero-muted">{caption as string}</p>
-                  </figcaption>
-                </figure>
-              ))}
-            </div>
+            <GalleryCarousel />
           </div>
         </section>
 

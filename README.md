@@ -10,8 +10,9 @@ A full-stack, commercial-ready booking website for **RGN's Homestay Homestyle Li
 
 ## 🌟 Key Features
 
-- **Heritage Warm Minimal design** — terracotta/brass palette, Playfair Display + Plus Jakarta Sans, Pinterest-style masonry gallery. See [DESIGN.md](DESIGN.md).
+- **Heritage Warm Minimal design** — terracotta/brass palette, Playfair Display + Plus Jakarta Sans, swipeable photo gallery of the real house (entrance → hall → rooms) with arrows, dots and keyboard support. See [DESIGN.md](DESIGN.md).
 - **Direct booking, zero commission** — guests reserve straight from Mrs S Gowri; live availability is checked against Google Calendar before a booking is accepted.
+- **Room-aware availability** — the house has two bedroom units. A **2BHK** booking takes the whole home (both units); a **1BHK** booking takes one unit, so a second 1BHK can still be booked for the same nights. A night is full once both units are taken. Calendar events that don't name a room type are treated as the whole home.
 - **AI chat concierge** — a Gemini-powered assistant (bottom-right widget) answers questions about rooms, rates, amenities, booking, and Karur/Tamil Nadu travel, with FAQ suggestions surfaced up front. See [Chat assistant & data privacy](#-chat-assistant--data-privacy) below.
 - **Legal pages** — dedicated [Terms & Conditions](rgn-homestyle-retreat-main/src/routes/terms.tsx), [Privacy Policy](rgn-homestyle-retreat-main/src/routes/privacy.tsx), and [Cancellation Policy](rgn-homestyle-retreat-main/src/routes/cancellation-policy.tsx) pages, linked from the footer and required (checkbox) before a booking is submitted.
 - **Accommodations & inclusions**:
@@ -39,6 +40,7 @@ This is a small commercial site handling real guest PII (name, phone, email) and
 - **Strict input validation** on every field of `POST /api/book` (name/phone/email/date/guest-count patterns, control-character rejection to block header/formula injection, room-type and date-range sanity checks) before anything touches Google APIs.
 - **Google Sheets formula-injection protection** — booking rows are written with `valueInputOption: RAW`, so a guest name like `=IMPORTXML(...)` is stored as literal text, never evaluated as a formula.
 - **Duplicate-booking protection** — a guest (matched by normalized email *or* phone) cannot submit a second booking whose dates overlap one they already hold; the check reads live (uncached) sheet data at submission time to minimize race conditions.
+- **Daily booking limits** — a single mobile number can make at most **3 bookings per day**, and the whole site accepts at most **30 bookings per day**; once that cap is hit, every further request that day is told the rooms are fully booked, whatever dates are asked for (a circuit breaker against scripted mass-booking). Counts come from the Google Sheet (so they hold on serverless hosting), reset at midnight IST, and include cancelled rows. If the sheet can't be read, bookings are refused (fails closed). Tune with `MAX_BOOKINGS_PER_DAY` / `MAX_BOOKINGS_PER_PHONE_PER_DAY`.
 - **Honeypot anti-bot field** on the reservation form — invisible to real guests (`aria-hidden`, `tabIndex={-1}`, visually hidden), rejected server-side if filled.
 - **JSON-only error handling** — a centralized error handler and a JSON 404 for unmatched `/api/*` routes mean the API never leaks a stack trace or Express's default HTML error page.
 - **Secrets hygiene** — all credentials (Google service account key, Gmail App Password, Gemini API key) live only in `backend/.env`, which is git-ignored (see `.gitignore`); `backend/.env.example` ships placeholders only. No secret is hardcoded in source. The repository's git history was audited and contains no committed credentials.
@@ -191,6 +193,10 @@ GEMINI_MODEL=gemini-3.6-flash
 PORT=5000
 NODE_ENV=development
 CORS_ORIGINS=http://localhost:8080,http://localhost:5173,http://localhost:5174
+
+# Daily booking limits (optional; these are the defaults)
+MAX_BOOKINGS_PER_DAY=30
+MAX_BOOKINGS_PER_PHONE_PER_DAY=3
 ```
 
 Never commit `.env` — it's git-ignored. `.env.example` (placeholders only) is the tracked reference.

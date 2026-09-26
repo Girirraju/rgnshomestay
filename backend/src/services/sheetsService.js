@@ -87,7 +87,11 @@ const RAW_ROW_CACHE_TTL_MS = 30 * 1000;
  * (including phone/email). Internal use only — never pass the result of this
  * function to the chatbot; use getPublicBookingSummaries for that.
  */
-async function fetchRawRows({ fresh = false } = {}) {
+// `strict: true` rethrows a live Sheets read failure instead of silently
+// falling back to the (empty) mock rows — used by the daily booking limits,
+// which must fail closed rather than let everything through while the sheet
+// is unreachable.
+async function fetchRawRows({ fresh = false, strict = false } = {}) {
   const now = Date.now();
   if (!fresh && rawRowCache.data && now - rawRowCache.fetchedAt < RAW_ROW_CACHE_TTL_MS) {
     return rawRowCache.data;
@@ -114,6 +118,7 @@ async function fetchRawRows({ fresh = false } = {}) {
         .filter(Boolean);
     } catch (error) {
       console.error('[SheetsService] Error reading Google Sheet:', error.message);
+      if (strict) throw error;
       records = mockSheetRows.map(rowToRecord).filter(Boolean);
     }
   }
@@ -178,8 +183,39 @@ async function findOverlappingBookingForContact({ email, phone, checkIn, checkOu
   }) || null;
 }
 
+// The homestay operates on Indian time, so "per day" limits reset at IST
+// midnight. Sheet timestamps are written in UTC ("YYYY-MM-DD HH:MM:SS").
+const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
+
+function istDateOf(date) {
+  return new Date(date.getTime() + IST_OFFSET_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * Count booking rows created today (IST) — site-wide, and for one phone
+ * number. Cancelled rows are counted too: these limits exist to cap abuse,
+ * and a spammer's rows being cancelled afterwards shouldn't hand them fresh
+ * quota the same day. Throws if the live sheet can't be read.
+ */
+async function getTodaysBookingCounts(phone) {
+  const today = istDateOf(new Date());
+  const normalizedPhone = normalizePhone(phone);
+  const records = await fetchRawRows({ fresh: true, strict: true });
+
+  let total = 0;
+  let forPhone = 0;
+  for (const record of records) {
+    const created = new Date(`${String(record.timestamp || '').replace(' ', 'T')}Z`);
+    if (Number.isNaN(created.getTime()) || istDateOf(created) !== today) continue;
+    total += 1;
+    if (normalizedPhone && normalizePhone(record.phone) === normalizedPhone) forPhone += 1;
+  }
+  return { total, forPhone };
+}
+
 module.exports = {
   appendBookingRow,
   getPublicBookingSummaries,
-  findOverlappingBookingForContact
+  findOverlappingBookingForContact,
+  getTodaysBookingCounts
 };
