@@ -50,7 +50,7 @@ This is a small commercial site handling real guest PII (name, phone, email) and
 1. Set `NODE_ENV=production`.
 2. Set `CORS_ORIGINS` to your exact deployed frontend URL(s) — do not leave it unset.
 3. Set `PORT` as required by your host.
-4. If you run behind a reverse proxy/load balancer, configure Express's `trust proxy` setting appropriately so rate limiting sees real client IPs (not enabled by default, since enabling it without an actual proxy in front would let clients spoof `X-Forwarded-For` to bypass rate limits).
+4. On Vercel, `trust proxy` is enabled automatically (detected via Vercel's `VERCEL` env var) so rate limits apply per visitor. On any other host behind a reverse proxy/load balancer, configure Express's `trust proxy` setting appropriately so rate limiting sees real client IPs (not enabled by default, since enabling it without an actual proxy in front would let clients spoof `X-Forwarded-For` to bypass rate limits).
 
 ---
 

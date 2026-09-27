@@ -11,6 +11,14 @@ const chatRoutes = require('./routes/chat');
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
 
+// On Vercel (which sets VERCEL=1), every request arrives through Vercel's
+// proxy, which overwrites X-Forwarded-For with the real client IP. Trust that
+// one hop so rate limits apply per visitor instead of to the proxy's IP.
+// Elsewhere it stays off, so clients can't spoof X-Forwarded-For.
+if (process.env.VERCEL) {
+  app.set('trust proxy', 1);
+}
+
 // Security headers. This is a JSON-only API (no HTML views), so the default
 // script/style CSP directives don't apply — but we do need cross-origin
 // responses readable by the separately-hosted frontend, which CORS below
