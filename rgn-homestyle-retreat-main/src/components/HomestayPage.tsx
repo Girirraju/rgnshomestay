@@ -70,7 +70,7 @@ type BookingValues = {
   guests: string;
 };
 type BookedRange = { start: string; end: string };
-type Confirmation = BookingValues & { bookingId: string; demo: boolean };
+type Confirmation = BookingValues & { bookingId: string };
 
 const bookingSchema = z
   .object({
@@ -613,13 +613,13 @@ function BookingForm({
         });
         return;
       }
-      setConfirmation({ ...parsed.data, bookingId: data.bookingId, demo: false });
+      setConfirmation({ ...parsed.data, bookingId: data.bookingId });
     } catch {
+      // Network failure / backend unreachable: nothing was booked, so never
+      // show a confirmation — tell the guest and point them to the host.
       setApiOffline(true);
-      setConfirmation({
-        ...parsed.data,
-        bookingId: `RGN-DEMO-${Date.now().toString().slice(-6)}`,
-        demo: true,
+      setErrors({
+        form: "We couldn't reach our booking service, so your booking was not placed. Please try again, or call / WhatsApp the host on +91 70107 75902.",
       });
     } finally {
       setSubmitting(false);
@@ -645,12 +645,6 @@ function BookingForm({
             </p>
           </div>
         </div>
-        {confirmation.demo ? (
-          <p className="mt-5 rounded-xl border border-gold/40 bg-gold-soft px-4 py-3 text-sm text-foreground">
-            Demo mode: the booking service is currently unreachable, so this confirmation is for
-            testing and has not been sent to the host.
-          </p>
-        ) : null}
         <dl className="mt-7 grid gap-px overflow-hidden rounded-2xl border border-border bg-border sm:grid-cols-2">
           {[
             ["Booking ID", confirmation.bookingId],
@@ -715,7 +709,8 @@ function BookingForm({
       </p>
       {apiOffline ? (
         <p className="mt-5 rounded-xl border border-gold/40 bg-gold-soft px-4 py-3 text-sm">
-          Live availability is temporarily unavailable. Demo mode keeps the form testable.
+          Live availability is temporarily unavailable. If your booking does not go through, please
+          call or WhatsApp the host on +91 70107 75902.
         </p>
       ) : null}
       {errors["form"] ? (
